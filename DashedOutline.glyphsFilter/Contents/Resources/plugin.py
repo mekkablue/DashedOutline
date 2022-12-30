@@ -29,6 +29,7 @@ class DashedOutline(FilterWithDialog):
 	strokeWidthField = objc.IBOutlet()
 	dashField = objc.IBOutlet()
 	gapField = objc.IBOutlet()
+	distributeField = objc.IBOutlet()
 
 	@objc.python_method
 	def settings(self):
@@ -66,11 +67,13 @@ class DashedOutline(FilterWithDialog):
 		Glyphs.registerDefault(self.domain('strokeWidth'), 40.0)
 		Glyphs.registerDefault(self.domain('dash'), 300.0)
 		Glyphs.registerDefault(self.domain('gap'), 50.0)
+		Glyphs.registerDefault(self.domain('distribute'), 0)
 		
 		# Set value of text field
 		self.strokeWidthField.setStringValue_(self.pref('strokeWidth'))
 		self.dashField.setStringValue_(self.pref('dash'))
 		self.gapField.setStringValue_(self.pref('gap'))
+		self.distributeField.setValue_(self.pref('distribute'))
 		
 		# Set focus to text field
 		self.strokeWidthField.becomeFirstResponder()
@@ -88,31 +91,76 @@ class DashedOutline(FilterWithDialog):
 	# Action triggered by UI
 	@objc.IBAction
 	def setStrokeWidth_(self, sender=None):
-		Glyphs.defaults[self.domain('strokeWidth')] = sender.floatValue()
+		Glyphs.defaults[self.domain('strokeWidth')] = max(1.0, sender.floatValue())
 		self.update()
 	
 	@objc.IBAction
 	def setDash_(self, sender=None):
-		Glyphs.defaults[self.domain('dash')] = sender.floatValue()
+		Glyphs.defaults[self.domain('dash')] = max(1.0, sender.floatValue())
 		self.update()
 	
 	@objc.IBAction
 	def setGap_(self, sender=None):
-		Glyphs.defaults[self.domain('gap')] = sender.floatValue()
+		Glyphs.defaults[self.domain('gap')] = max(1.0, sender.floatValue())
+		self.update()
+
+	@objc.IBAction
+	def setDistribute_(self, sender=None):
+		Glyphs.defaults[self.domain('distribute')] = sender.intValue()
 		self.update()
 	
 	@objc.python_method
-	def dashGapForPath(self, thisPath, dash=200, precision=20):
+	def lengthOfCurve(self, segment, precision=4):
+		"""
+		Returns the length of a curve segment
+		"""
+		innerLine = distance(segment[0], segment[3])
+		outerLine = distance(segment[0], segment[1]) + distance(segment[1], segment[2]) + distance(segment[2], segment[3])
+		simpleLength = (innerLine+outerLine)*0.5
+		if abs(innerLine-outerLine) < precision:
+			return simpleLength
+		else:
+			segment1, segment2 = segment.splitAtTime_firstHalf_secondHalf_(0.5, None, None)
+			return self.lengthOfCurve(segment1) + self.lengthOfCurve(segment2)
+		
+		length = 0
+		p1 = segment[0]
+		for i in range(precision):
+			t = (i+1)/float(precision)
+			p2 = segment.pointAtTime_(t)
+			length += distance(p1, p2)
+			p1 = p2
+		return length
+	
+	@objc.python_method
+	def lengthOfSegment(self, segment, precision=4):
+		if len(segment) == 2:
+			return segment.length()
+		else:
+			return self.lengthOfCurve(segment, precision=precision)
+	
+	@objc.python_method
+	def lengthOfPath(self, path, precision=4):
+		"""
+		Returns length (in units) of path.
+		"""
+		length = 0
+		for segment in path.segments:
+			length += self.lengthOfSegment(segment, precision=precision)
+		return length
+
+	@objc.python_method
+	def dashGapForPath(self, thisPath, dash=200, precision=4):
 		"""
 		Splits up thisPath into two GSPath objects:
 		Returns a GSPath with the length of dash, 
-		and a GSPath with the remainder after subtraction of gap.
+		and a GSPath with the remainder of thisPath.
 		"""
 		dashPath = GSPath()
 		dashLength = 0
 		lastDashSegment, remainderSegment = None, None
 		for i, thisSegment in enumerate(thisPath.segments):
-			segmentLength = thisSegment.length()
+			segmentLength = self.lengthOfSegment(thisSegment, precision=precision)
 			if dashLength + segmentLength < dash:
 				dashPath.segments = thisPath.segments[:i+1]
 				dashLength += segmentLength
@@ -122,12 +170,13 @@ class DashedOutline(FilterWithDialog):
 					t = (dash-dashLength)/segmentLength
 					lastDashSegment, remainderSegment = thisSegment.splitAtTime_firstHalf_secondHalf_(t, None, None)
 					break
-				elif len( thisSegment ) == 4:
+				elif len(thisSegment) == 4:
 					# curved segment:
-					for j in range(precision):
-						t = j/precision
+					stepPrecision = 30
+					for j in range(1,stepPrecision):
+						t = j/stepPrecision
 						lastDashSegment, remainderSegment = thisSegment.splitAtTime_firstHalf_secondHalf_(t, None, None)
-						if dashLength + lastDashSegment.length() >= dash:
+						if dashLength + self.lengthOfSegment(lastDashSegment, precision=precision) >= dash:
 							break
 					break
 
@@ -148,6 +197,7 @@ class DashedOutline(FilterWithDialog):
 		strokeWidth = self.pref('strokeWidth')
 		dash = self.pref('dash')
 		gap = self.pref('gap')
+		distribute = self.pref('distribute')
 		
 		# Called on font export, get value from customParameters
 		if "strokeWidth" in customParameters:
@@ -156,19 +206,27 @@ class DashedOutline(FilterWithDialog):
 			dash = float(customParameters['dash'])
 		if "gap" in customParameters:
 			gap = float(customParameters['gap'])
+		if "distribute" in customParameters:
+			distribute = int(customParameters['distribute'])
 		
 		dashLayer = layer.copyDecomposedLayer()
 		dashLayer.clear()
 		workLayer = layer.copyDecomposedLayer()
 		for path in workLayer.paths:
 			dashPaths = []
+			factor = 1.0
+			if distribute:
+				pathLength = self.lengthOfPath(path)
+				howManyTimes = pathLength/(dash+gap)
+				if howManyTimes > 0.9: 
+					factor = howManyTimes/round(howManyTimes)
 			while not path is None:
-				length = (dash, gap)[len(dashPaths)%2]
+				length = (dash*factor, gap*factor)[len(dashPaths)%2]
 				dashPath, path = self.dashGapForPath(path, length)
 				dashPaths.append(dashPath)
 			else:
 				for eachPiece in dashPaths[::2]:
-					if sum([s.length() for s in eachPiece.segments]) >= strokeWidth:
+					if sum([s.length() for s in eachPiece.segments]) >= strokeWidth*0.98:
 						# avoid path debris
 						dashLayer.shapes.append(eachPiece)
 		
@@ -178,17 +236,17 @@ class DashedOutline(FilterWithDialog):
 		offsetFilter.offsetLayer_offsetX_offsetY_makeStroke_autoStroke_position_metrics_error_shadow_capStyleStart_capStyleEnd_keepCompatibleOutlines_(
 			dashLayer,
 			strokeWidth/2, strokeWidth/2, # horizontal and vertical offset
-			True,     # if True, creates a stroke
-			False,     # if True, distorts resulting shape to vertical metrics
-			0.5,       # stroke distribution to the left and right, 0.5 = middle
+			True, # if True, creates a stroke
+			False, # if True, distorts resulting shape to vertical metrics
+			0.5, # stroke distribution to the left and right, 0.5 = middle
 			None, None, None, 1, 1, True )
 			
 		roundFilter = NSClassFromString("GlyphsFilterRoundCorner")
 		roundFilter.roundLayer_radius_checkSelection_visualCorrect_grid_(
 			dashLayer, strokeWidth/2,
-			False,   # if True, only rounds user-selected points
+			False, # if True, only rounds user-selected points
 			True, # visual correction of non-perpendicular angles
-			True,       # whether it the resulting path should stick to the grid
+			True, # whether it the resulting path should stick to the grid
 			)
 		
 		layer.shapes = dashLayer.shapes
@@ -196,12 +254,13 @@ class DashedOutline(FilterWithDialog):
 	
 	@objc.python_method
 	def generateCustomParameter(self):
-		return "%s; strokeWidth:%s; dash:%s; gap:%s;" % (
+		return ("%s; strokeWidth:%s; dash:%s; gap:%s; distribute:%i" % (
 			self.__class__.__name__,
 			self.pref("strokeWidth"),
 			self.pref("dash"),
 			self.pref("gap"),
-			)
+			self.pref("distribute"),
+			)).replace(".0;", ";")
 
 	@objc.python_method
 	def __file__(self):
