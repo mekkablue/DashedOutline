@@ -116,7 +116,7 @@ class DashedOutline(FilterWithDialog):
 		"""
 		innerLine = distance(segment[0], segment[3])
 		outerLine = distance(segment[0], segment[1]) + distance(segment[1], segment[2]) + distance(segment[2], segment[3])
-		simpleLength = (innerLine+outerLine)*0.5
+		simpleLength = (innerLine + outerLine) * 0.5
 		if abs(innerLine-outerLine) < precision:
 			return simpleLength
 		else:
@@ -167,7 +167,7 @@ class DashedOutline(FilterWithDialog):
 			else:
 				if len(thisSegment) == 2:
 					# straight line:
-					t = (dash-dashLength)/segmentLength
+					t = (dash - dashLength) / segmentLength
 					lastDashSegment, remainderSegment = thisSegment.splitAtTime_firstHalf_secondHalf_(t, None, None)
 					break
 				elif len(thisSegment) == 4:
@@ -226,9 +226,17 @@ class DashedOutline(FilterWithDialog):
 				dashPaths.append(dashPath)
 			else:
 				for eachPiece in dashPaths[::2]:
-					if sum([s.length() for s in eachPiece.segments]) >= strokeWidth*0.98:
-						# avoid path debris
+					# avoid small corners:
+					firstSegment = eachPiece.segments[0]
+					lastSegment = eachPiece.segments[-1]
+					if firstSegment.type == LINE and firstSegment.length() < strokeWidth * 0.98:
+						eachPiece.segments = eachPiece.segments[1:]
+					if lastSegment.type == LINE and lastSegment.length() < strokeWidth * 0.98:
+						eachPiece.segments = eachPiece.segments[:-1]
+					# avoid path debris:
+					if sum([s.length() for s in eachPiece.segments]) >= strokeWidth * 0.98:
 						dashLayer.shapes.append(eachPiece)
+					
 		
 		dashLayer.connectAllOpenPaths()
 		
