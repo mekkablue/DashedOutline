@@ -30,6 +30,7 @@ class DashedOutline(FilterWithDialog):
 	dashField = objc.IBOutlet()
 	gapField = objc.IBOutlet()
 	distributeField = objc.IBOutlet()
+	strokePositionField = objc.IBOutlet()
 
 	@objc.python_method
 	def settings(self):
@@ -68,12 +69,14 @@ class DashedOutline(FilterWithDialog):
 		Glyphs.registerDefault(self.domain('dash'), 300.0)
 		Glyphs.registerDefault(self.domain('gap'), 50.0)
 		Glyphs.registerDefault(self.domain('distribute'), 0)
+		Glyphs.registerDefault(self.domain('strokePosition'), 50)
 		
 		# Set value of text field
-		self.strokeWidthField.setStringValue_(self.pref('strokeWidth'))
-		self.dashField.setStringValue_(self.pref('dash'))
-		self.gapField.setStringValue_(self.pref('gap'))
+		self.strokeWidthField.setValue_(self.pref('strokeWidth'))
+		self.dashField.setValue_(self.pref('dash'))
+		self.gapField.setValue_(self.pref('gap'))
 		self.distributeField.setValue_(self.pref('distribute'))
+		self.strokePositionField.setValue_(self.pref('strokePosition'))
 		
 		# Set focus to text field
 		self.strokeWidthField.becomeFirstResponder()
@@ -107,6 +110,11 @@ class DashedOutline(FilterWithDialog):
 	@objc.IBAction
 	def setDistribute_(self, sender=None):
 		Glyphs.defaults[self.domain('distribute')] = sender.intValue()
+		self.update()
+	
+	@objc.IBAction
+	def setStrokePosition_(self, sender=None):
+		Glyphs.defaults[self.domain('strokePosition')] = sender.intValue()
 		self.update()
 	
 	@objc.python_method
@@ -194,10 +202,15 @@ class DashedOutline(FilterWithDialog):
 	# Actual filter
 	@objc.python_method
 	def filter(self, layer, inEditView, customParameters):
-		strokeWidth = self.pref('strokeWidth')
-		dash = self.pref('dash')
-		gap = self.pref('gap')
-		distribute = self.pref('distribute')
+		offsetFilter = NSClassFromString("GlyphsFilterOffsetCurve")
+		roundFilter = NSClassFromString("GlyphsFilterRoundCorner")
+		
+		# defaults
+		strokeWidth = self.pref('strokeWidth') if self.pref('strokeWidth')!=None else 40.0
+		dash = self.pref('dash') if self.pref('dash')!=None else 300.0
+		gap = self.pref('gap') if self.pref('gap')!=None else 50.0
+		distribute = self.pref('distribute') if self.pref('distribute')!=None else 0
+		strokePosition = self.pref('strokePosition') if self.pref('strokePosition')!=None else 50
 		
 		# Called on font export, get value from customParameters
 		if "strokeWidth" in customParameters:
@@ -208,10 +221,38 @@ class DashedOutline(FilterWithDialog):
 			gap = float(customParameters['gap'])
 		if "distribute" in customParameters:
 			distribute = int(customParameters['distribute'])
+		if "strokePosition" in customParameters:
+			strokePosition = int(customParameters['strokePosition'])
 		
 		dashLayer = layer.copyDecomposedLayer()
 		dashLayer.clear()
+		dashLayer.cleanUpPaths()
+		dashLayer.hints = []
 		workLayer = layer.copyDecomposedLayer()
+		workLayer.flattenOutlines()
+		workLayer.decomposeCorners()
+		workLayer.removeOverlap()
+		workLayer.cleanUpPaths()
+		workLayer.hints = []
+		
+		if strokePosition != 0:
+			offsetFilter.offsetLayer_offsetX_offsetY_makeStroke_autoStroke_position_metrics_error_shadow_capStyleStart_capStyleEnd_keepCompatibleOutlines_(
+				workLayer,
+				strokePosition, strokePosition, # horizontal and vertical offset
+				False, # if True, creates a stroke
+				False, # if True, distorts resulting shape to vertical metrics
+				0, # stroke distribution to the left and right, 0.5 = middle
+				None, None, None, 0, 0, True )
+			
+		offsetFilter.offsetLayer_offsetX_offsetY_makeStroke_autoStroke_position_metrics_error_shadow_capStyleStart_capStyleEnd_keepCompatibleOutlines_(
+			dashLayer,
+			strokeWidth/2, strokeWidth/2, # horizontal and vertical offset
+			True, # if True, creates a stroke
+			False, # if True, distorts resulting shape to vertical metrics
+			strokePosition/100, # stroke distribution to the left and right, 0.5 = middle
+			None, None, None, 1, 1, True )
+		
+		
 		for path in workLayer.paths:
 			dashPaths = []
 			factor = 1.0
@@ -240,7 +281,6 @@ class DashedOutline(FilterWithDialog):
 		
 		dashLayer.connectAllOpenPaths()
 		
-		offsetFilter = NSClassFromString("GlyphsFilterOffsetCurve")
 		offsetFilter.offsetLayer_offsetX_offsetY_makeStroke_autoStroke_position_metrics_error_shadow_capStyleStart_capStyleEnd_keepCompatibleOutlines_(
 			dashLayer,
 			strokeWidth/2, strokeWidth/2, # horizontal and vertical offset
@@ -249,7 +289,6 @@ class DashedOutline(FilterWithDialog):
 			0.5, # stroke distribution to the left and right, 0.5 = middle
 			None, None, None, 1, 1, True )
 			
-		roundFilter = NSClassFromString("GlyphsFilterRoundCorner")
 		roundFilter.roundLayer_radius_checkSelection_visualCorrect_grid_(
 			dashLayer, strokeWidth/2,
 			False, # if True, only rounds user-selected points
@@ -262,12 +301,13 @@ class DashedOutline(FilterWithDialog):
 	
 	@objc.python_method
 	def generateCustomParameter(self):
-		return ("%s; strokeWidth:%s; dash:%s; gap:%s; distribute:%i" % (
+		return ("%s; strokeWidth:%i; dash:%i; gap:%i; distribute:%i; strokePosition:%i" % (
 			self.__class__.__name__,
-			self.pref("strokeWidth"),
-			self.pref("dash"),
-			self.pref("gap"),
-			self.pref("distribute"),
+			int(self.pref("strokeWidth")),
+			int(self.pref("dash")),
+			int(self.pref("gap")),
+			int(self.pref("distribute")),
+			int(self.pref("strokePosition")),
 			)).replace(".0;", ";")
 
 	@objc.python_method
