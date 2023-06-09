@@ -20,6 +20,7 @@ from GlyphsApp import *
 from GlyphsApp.plugins import *
 from AppKit import NSPoint
 from Foundation import NSClassFromString
+from copy import copy as copy
 
 class DashedOutline(FilterWithDialog):
 	prefID = 'com.mekkablue.DashedOutline'
@@ -65,18 +66,20 @@ class DashedOutline(FilterWithDialog):
 	def start(self):
 		
 		# Set default value
-		Glyphs.registerDefault(self.domain('strokeWidth'), 40.0)
-		Glyphs.registerDefault(self.domain('dash'), 300.0)
-		Glyphs.registerDefault(self.domain('gap'), 50.0)
-		Glyphs.registerDefault(self.domain('distribute'), 0)
-		Glyphs.registerDefault(self.domain('strokePosition'), 50)
+		Glyphs.registerDefaults({
+			self.domain('strokeWidth'): 40.0,
+			self.domain('dash'): 300.0,
+			self.domain('gap'): 50.0,
+			self.domain('distribute'): 0,
+			self.domain('strokePosition'): 0,
+		})
 		
 		# Set value of text field
-		self.strokeWidthField.setValue_(self.pref('strokeWidth'))
-		self.dashField.setValue_(self.pref('dash'))
-		self.gapField.setValue_(self.pref('gap'))
-		self.distributeField.setValue_(self.pref('distribute'))
-		self.strokePositionField.setValue_(self.pref('strokePosition'))
+		self.strokeWidthField.setIntValue_(self.pref('strokeWidth'))
+		self.dashField.setIntValue_(self.pref('dash'))
+		self.gapField.setIntValue_(self.pref('gap'))
+		self.distributeField.setIntValue_(self.pref('distribute'))
+		self.strokePositionField.setIntValue_(self.pref('strokePosition'))
 		
 		# Set focus to text field
 		self.strokeWidthField.becomeFirstResponder()
@@ -210,7 +213,8 @@ class DashedOutline(FilterWithDialog):
 		dash = self.pref('dash') if self.pref('dash')!=None else 300.0
 		gap = self.pref('gap') if self.pref('gap')!=None else 50.0
 		distribute = self.pref('distribute') if self.pref('distribute')!=None else 0
-		strokePosition = self.pref('strokePosition') if self.pref('strokePosition')!=None else 50
+		strokePosition = self.pref('strokePosition') if self.pref('strokePosition')!=None else 0
+		onlyOnce = False
 		
 		# Called on font export, get value from customParameters
 		if "strokeWidth" in customParameters:
@@ -223,6 +227,11 @@ class DashedOutline(FilterWithDialog):
 			distribute = int(customParameters['distribute'])
 		if "strokePosition" in customParameters:
 			strokePosition = int(customParameters['strokePosition'])
+		if "onlyOnce" in customParameters:
+			onlyOnce = True
+		
+		# correct for dash overshoot
+		gap += strokeWidth
 		
 		dashLayer = layer.copyDecomposedLayer()
 		dashLayer.clear()
@@ -265,17 +274,20 @@ class DashedOutline(FilterWithDialog):
 				length = (dash*factor, gap*factor)[len(dashPaths)%2]
 				dashPath, path = self.dashGapForPath(path, length)
 				dashPaths.append(dashPath)
+				if onlyOnce and path != None and len(dashPaths)==2:
+					dashPaths.append(copy(path))
+					path = None
 			else:
 				for eachPiece in dashPaths[::2]:
 					# avoid small corners:
 					firstSegment = eachPiece.segments[0]
 					lastSegment = eachPiece.segments[-1]
-					if firstSegment.type == LINE and firstSegment.length() < strokeWidth * 0.98:
+					if  firstSegment.length() < strokeWidth * 0.98: # firstSegment.type == LINE and  
 						eachPiece.segments = eachPiece.segments[1:]
-					if lastSegment.type == LINE and lastSegment.length() < strokeWidth * 0.98:
+					if  lastSegment.length() < strokeWidth * 0.98: # lastSegment.type == LINE and  
 						eachPiece.segments = eachPiece.segments[:-1]
 					# avoid path debris:
-					if sum([s.length() for s in eachPiece.segments]) >= strokeWidth * 0.98:
+					if sum([s.length() for s in eachPiece.segments]) >= strokeWidth * 1.02:
 						dashLayer.shapes.append(eachPiece)
 					
 		
@@ -301,13 +313,14 @@ class DashedOutline(FilterWithDialog):
 	
 	@objc.python_method
 	def generateCustomParameter(self):
+		self.start()
 		return ("%s; strokeWidth:%i; dash:%i; gap:%i; distribute:%i; strokePosition:%i" % (
 			self.__class__.__name__,
-			int(self.pref("strokeWidth")),
-			int(self.pref("dash")),
-			int(self.pref("gap")),
-			int(self.pref("distribute")),
-			int(self.pref("strokePosition")),
+			self.pref("strokeWidth"),
+			self.pref("dash"),
+			self.pref("gap"),
+			self.pref("distribute"),
+			self.pref("strokePosition"),
 			)).replace(".0;", ";")
 
 	@objc.python_method

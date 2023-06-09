@@ -13,15 +13,15 @@
 	<key>CFBundleName</key>
 	<string>DashedOutline</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.3</string> <!-- 1.0 -->
+	<string>1.3.3</string> <!-- 1.0 -->
 	<key>CFBundleVersion</key>
-	<string>4</string> <!-- 123 -->
+	<string>7</string> <!-- 123 -->
 	<key>UpdateFeedURL</key>
 	<string>https://raw.githubusercontent.com/mekkablue/DashedOutline/master/DashedOutline.glyphsFilter/Contents/Info.plist</string>
 	<key>productPageURL</key>
 	<string>https://github.com/mekkablue/DashedOutline</string>
 	<key>productReleaseNotes</key>
-	<string>Added stroke position for concentric offset</string>
+	<string>Improved UI width</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright, Rainer Erich Scheichelbauer, 2022</string>
 	<key>NSPrincipalClass</key>
