@@ -235,14 +235,15 @@ class DashedOutline(FilterWithDialog):
 		
 		dashLayer = layer.copyDecomposedLayer()
 		dashLayer.clear()
-		dashLayer.cleanUpPaths()
 		dashLayer.hints = []
 		workLayer = layer.copyDecomposedLayer()
 		workLayer.flattenOutlines()
 		workLayer.decomposeCorners()
 		workLayer.removeOverlap()
-		workLayer.cleanUpPaths()
 		workLayer.hints = []
+		if not onlyOnce:
+			dashLayer.cleanUpPaths()
+			workLayer.cleanUpPaths()
 		
 		if strokePosition != 0:
 			offsetFilter.offsetLayer_offsetX_offsetY_makeStroke_autoStroke_position_metrics_error_shadow_capStyleStart_capStyleEnd_keepCompatibleOutlines_(
@@ -282,9 +283,9 @@ class DashedOutline(FilterWithDialog):
 					# avoid small corners:
 					firstSegment = eachPiece.segments[0]
 					lastSegment = eachPiece.segments[-1]
-					if  firstSegment.length() < strokeWidth * 0.98: # firstSegment.type == LINE and  
+					if firstSegment.length() < strokeWidth * 0.98: # firstSegment.type == LINE and  
 						eachPiece.segments = eachPiece.segments[1:]
-					if  lastSegment.length() < strokeWidth * 0.98: # lastSegment.type == LINE and  
+					if lastSegment.length() < strokeWidth * 0.98: # lastSegment.type == LINE and  
 						eachPiece.segments = eachPiece.segments[:-1]
 					# avoid path debris:
 					if sum([s.length() for s in eachPiece.segments]) >= strokeWidth * 1.02:
